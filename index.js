@@ -9,7 +9,9 @@ const settings = {
   command: "btop",
   args: ["-u", "1000"],
   port: 8080,
+  rateLimit: 1,
 }
+var nextAllowedMessage = 0 // The process time of the earliest next allowed message
 
 // Process command line arguments
 var argv = process.argv
@@ -38,8 +40,9 @@ This script will automatically send the output of btop to all connected websocke
 
 Usage: node index.js [OPTIONS] [-c COMMAND]
 
--s\tSilent
--p\tPort
+-s\tDo not print messages
+-p\tPort (Default: 8080)
+-l\tLimit rate (Default: 1000ms, -1 to disable)
 -c\tUse an alternate command (and/or arguments)
 -h, --help\tShows this help
     `)
@@ -47,6 +50,17 @@ Usage: node index.js [OPTIONS] [-c COMMAND]
 }
 
 if (argv.includes("-s")) settings.silent = true
+
+if (argv.includes("-l")) {
+  const index = argv.indexOf("-l") + 1
+
+  if (argv.length - 1 < index) {
+    console.log("No limit given!")
+    process.exit(1)
+  }
+
+  settings.rateLimit = parseInt(argv[index]) / 1000
+}
 
 if (argv.includes("-p")) {
   const index = argv.indexOf("-p") + 1
@@ -65,8 +79,7 @@ wss.on("connection", function connection(ws) {
   ws.on("error", console.error)
 
   ws.on("message", function message(data) {
-    if(!settings.silent)
-    console.log("Received: %s", data)
+    if (!settings.silent) console.log("Received: %s", data)
   })
 })
 
@@ -114,12 +127,16 @@ btopProcess.on("data", (data) => {
   result = result.replaceAll("</span>", "<i></closeall>")
   result = result.replaceAll("<span>", "")
 
-  // Send the string to each client
-  wss.clients.forEach((client) => {
-    if (client.readyState == WebSocket.OPEN) {
-      client.send(result)
-    }
-  })
+  if (process.uptime() >= nextAllowedMessage) {
+    nextAllowedMessage = process.uptime() + settings.rateLimit
 
-  if (!settings.silent) console.log("Data sent.")
+    // Send the string to each client
+    wss.clients.forEach((client) => {
+      if (client.readyState == WebSocket.OPEN) {
+        client.send(result)
+      }
+    })
+
+    if (!settings.silent) console.log("Data sent.")
+  } else if (!settings.silent) console.log("Data suppressed.")
 })
