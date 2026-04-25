@@ -45,13 +45,24 @@ if (isTickwatch) {
 
 // --- Btop: PTY + xterm serialize + htmlToResmarkup ---
 const COLS = Math.max(80, parseInt(process.env.COLS, 10) || 140)
-const ROWS = Math.max(24, parseInt(process.env.ROWS, 10) || 40)
+const ROWS = Math.max(24, parseInt(process.env.ROWS, 10) || 55)
 const term = new Terminal({ cols: COLS, rows: ROWS, scrollback: 0 })
 const serializeAddon = new SerializeAddon()
 term.loadAddon(serializeAddon)
 
 const configDir = path.join(process.cwd(), "config")
 const btopArgs = [...settings.args]
+// Sync btop's update interval (-u) with our send rate so the display matches what we stream
+if (!isTickwatch && settings.command === "btop") {
+  const updateMs = Math.max(500, Math.round(settings.rateLimit * 1000))
+  const uIdx = btopArgs.indexOf("-u")
+  if (uIdx >= 0 && btopArgs[uIdx + 1] !== undefined) {
+    btopArgs[uIdx + 1] = String(updateMs)
+  } else {
+    btopArgs.length = 0
+    btopArgs.push("-u", String(updateMs))
+  }
+}
 const env = { ...process.env }
 if (fs.existsSync(path.join(configDir, "btop", "btop.conf"))) {
   env.XDG_CONFIG_HOME = configDir
